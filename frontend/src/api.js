@@ -1,4 +1,4 @@
-const API_BASE = 'http://localhost:8000';
+const API_BASE = 'http://localhost:8001';
 
 export async function checkUrl(url) {
   const response = await fetch(`${API_BASE}/check?url=${encodeURIComponent(url)}`, {

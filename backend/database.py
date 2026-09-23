@@ -1,11 +1,9 @@
 import sqlite3
 import json
-import os
 from datetime import datetime, timedelta
 
-
-DB_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(DB_DIR, "threat_intel.db")
+# Vercel provides /tmp as a writable temporary directory
+DB_PATH = "/tmp/threat_intel.db"
 
 
 def get_connection():
@@ -48,19 +46,37 @@ def init_db():
 
     conn.commit()
     conn.close()
-    print("✅ Database initialized at", DB_PATH)
 
 
-def log_scan(url, domain, threat_score, threat_label, prediction,
-             confidence, features=None, explanation=None, scan_type="url_scan"):
+def log_scan(
+    url,
+    domain,
+    threat_score,
+    threat_label,
+    prediction,
+    confidence,
+    features=None,
+    explanation=None,
+    scan_type="url_scan"
+):
     """Log a scan result to the database."""
+
     conn = get_connection()
     cursor = conn.cursor()
 
     cursor.execute("""
         INSERT INTO scan_logs
-        (url, domain, threat_score, threat_label, prediction,
-         confidence, features_json, explanation_json, scan_type)
+        (
+            url,
+            domain,
+            threat_score,
+            threat_label,
+            prediction,
+            confidence,
+            features_json,
+            explanation_json,
+            scan_type
+        )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         url,
@@ -77,11 +93,13 @@ def log_scan(url, domain, threat_score, threat_label, prediction,
     conn.commit()
     scan_id = cursor.lastrowid
     conn.close()
+
     return scan_id
 
 
 def get_scan_history(limit=50, offset=0, label_filter=None):
     """Get recent scan history."""
+
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -96,6 +114,7 @@ def get_scan_history(limit=50, offset=0, label_filter=None):
     params.extend([limit, offset])
 
     cursor.execute(query, params)
+
     rows = cursor.fetchall()
     conn.close()
 
@@ -104,6 +123,7 @@ def get_scan_history(limit=50, offset=0, label_filter=None):
 
 def get_stats():
     """Get aggregated statistics for the dashboard."""
+
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -119,22 +139,31 @@ def get_stats():
         FROM scan_logs
         GROUP BY threat_label
     """)
-    stats["label_distribution"] = {row["threat_label"]: row["count"] for row in cursor.fetchall()}
+
+    stats["label_distribution"] = {
+        row["threat_label"]: row["count"]
+        for row in cursor.fetchall()
+    }
 
     # Average threat score
-    cursor.execute("SELECT AVG(threat_score) as avg_score FROM scan_logs")
+    cursor.execute("""
+        SELECT AVG(threat_score) as avg_score
+        FROM scan_logs
+    """)
+
     avg = cursor.fetchone()["avg_score"]
     stats["avg_threat_score"] = round(avg, 1) if avg else 0
 
-    # Recent scan count (last 24h)
+    # Recent scan count
     cursor.execute("""
         SELECT COUNT(*) as recent
         FROM scan_logs
         WHERE timestamp >= datetime('now', '-1 day')
     """)
+
     stats["scans_last_24h"] = cursor.fetchone()["recent"]
 
-    # Scans per day (last 7 days)
+    # Scans per day
     cursor.execute("""
         SELECT DATE(timestamp) as date, COUNT(*) as count
         FROM scan_logs
@@ -142,25 +171,41 @@ def get_stats():
         GROUP BY DATE(timestamp)
         ORDER BY date
     """)
-    stats["daily_scans"] = [{"date": row["date"], "count": row["count"]} for row in cursor.fetchall()]
+
+    stats["daily_scans"] = [
+        {
+            "date": row["date"],
+            "count": row["count"]
+        }
+        for row in cursor.fetchall()
+    ]
 
     # Top threat domains
     cursor.execute("""
-        SELECT domain, COUNT(*) as count, AVG(threat_score) as avg_score
+        SELECT
+            domain,
+            COUNT(*) as count,
+            AVG(threat_score) as avg_score
         FROM scan_logs
         WHERE threat_label IN ('WARN', 'BLOCK')
         GROUP BY domain
         ORDER BY count DESC
         LIMIT 10
     """)
+
     stats["top_threat_domains"] = [
-        {"domain": row["domain"], "count": row["count"], "avg_score": round(row["avg_score"], 1)}
+        {
+            "domain": row["domain"],
+            "count": row["count"],
+            "avg_score": round(row["avg_score"], 1)
+        }
         for row in cursor.fetchall()
     ]
 
     conn.close()
+
     return stats
 
 
-# Initialize DB on import
+# Initialize database
 init_db()
